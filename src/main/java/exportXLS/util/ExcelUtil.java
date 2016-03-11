@@ -1,10 +1,9 @@
 package exportXLS.util;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.awt.image.BufferedImage;
+import java.io.*;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -12,16 +11,13 @@ import java.util.Date;
 import java.util.List;
 
 import exportXLS.exception.ExportExcelException;
-import org.apache.poi.hssf.usermodel.HSSFCell;
-import org.apache.poi.hssf.usermodel.HSSFCellStyle;
-import org.apache.poi.hssf.usermodel.HSSFFont;
-import org.apache.poi.hssf.usermodel.HSSFRow;
-import org.apache.poi.hssf.usermodel.HSSFSheet;
-import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.hssf.usermodel.*;
 import org.apache.poi.ss.usermodel.Font;
 
 import exportXLS.annotation.Column;
 import exportXLS.annotation.Xls;
+
+import javax.imageio.ImageIO;
 
 
 public class ExcelUtil {
@@ -30,6 +26,8 @@ public class ExcelUtil {
     private final static String PART_BODY = "body";
     private HSSFWorkbook workbook;
     private final static Integer MAX_PAGE_NUM = 43000;
+    private String fileName;
+    private String imgType;
 
     /**
      * 导出并且生成 excel 文件
@@ -45,18 +43,19 @@ public class ExcelUtil {
         this.getWorkbook();
         int pageCount = 0;
         Xls excelClass = entityClass.getAnnotation(Xls.class);
-        String sheetName = excelClass.name();
+        String sheetName = fileName =excelClass.name();
         int size = entityList.size();
         try {
             //创建工作页的行，根据list中的对象创建数据行，从滴1行开始
             if (size > 0) {
                 pageCount = (size / MAX_PAGE_NUM) + 1;
+                HSSFPatriarch patriarch = null;
                 for (int i = 0; i < pageCount; i++) {
                     this.sheetName = sheetName + (i + 1);
-                    this.workbook.createSheet(this.sheetName);
+                    patriarch = this.workbook.createSheet(this.sheetName).createDrawingPatriarch();;
                     this.createSheetHeaderRow(fieldList);
                     for (int rowNo = 1, listNo = i * MAX_PAGE_NUM; listNo < (((i + 1) == pageCount) ? (i * MAX_PAGE_NUM) + (size % MAX_PAGE_NUM) : (i + 1) * MAX_PAGE_NUM); rowNo++, listNo++) {
-                        this.createSheetBodyRow(rowNo, entityList.get(listNo), fieldList);
+                        this.createSheetBodyRow(rowNo, entityList.get(listNo), fieldList,patriarch);
                     }
                 }
             }
@@ -122,31 +121,91 @@ public class ExcelUtil {
      * @param entityObj 需要导出的对象数据
      * @param fieldList 字段列表
      */
-    private void createSheetBodyRow(int rowNo, Object entityObj, List<Field> fieldList) throws ExportExcelException{
+    private void createSheetBodyRow(int rowNo, Object entityObj, List<Field> fieldList,HSSFPatriarch patriarch) throws ExportExcelException{
         HSSFSheet sheet = workbook.getSheet(sheetName);
-        HSSFRow rowBodyNo = sheet.createRow(rowNo);
+        HSSFRow row = sheet.createRow(rowNo);
         int cellBodyNo = 0;
-        Column column;
+        short index = 0;
+        short imgHeight = 0;
+        setCellValue(rowNo, entityObj, fieldList, patriarch, row, cellBodyNo, index, imgHeight);
+    }
+
+    private void setCellValue(int rowNo, Object entityObj, List<Field> fieldList, HSSFPatriarch patriarch, HSSFRow row, int cellBodyNo, short index, short imgHeight) throws ExportExcelException {
         HSSFCell cell;
+        Column column;
         for (Field field : fieldList) {
-            cell = rowBodyNo.createCell(cellBodyNo);
+            cell = row.createCell(cellBodyNo);
             column = field.getAnnotation(Column.class);
             field.setAccessible(true);
             try {
-                String cellValue = "";
-                if (column.formatter() != null && !column.formatter().equals("")) {
-                    cellValue = field.get(entityObj) != null ? entityObj.getClass().getMethod(column.formatter(), field.getType()).invoke(entityObj, field.get(entityObj)).toString() : "";
-                } else {
-                    cellValue = field.get(entityObj) != null ? field.get(entityObj).toString() : "";
-                }
-                cell.setCellValue(cellValue);
-                cell.setCellStyle(this.setCellStyle( ExcelUtil.PART_BODY));
+                imgHeight = formatCellValue(rowNo, entityObj, patriarch, row, index, imgHeight, cell, column, field);
             } catch (Exception e) {
                 e.printStackTrace();
                 throw new ExportExcelException(e);
             }
             cellBodyNo++;
+            index ++;
         }
+    }
+
+    private short formatCellValue(int rowNo, Object entityObj, HSSFPatriarch patriarch, HSSFRow row, short index, short imgHeight, HSSFCell cell, Column column, Field field) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException, IOException {
+        String simpleName = field.getType().getSimpleName();
+        this.imgType = column.imgType();
+        if (column.formatter() != null && !column.formatter().equals("")) {
+            cell.setCellValue(field.get(entityObj) != null ? entityObj.getClass().getMethod(column.formatter(), field.getType()).invoke(entityObj, field.get(entityObj)).toString() : "");
+        } else {
+            if(simpleName.equals("Integer")||simpleName.equals("int")){
+                cell.setCellValue(field.get(entityObj)!=null?Integer.valueOf(field.get(entityObj).toString()):0);
+            }else if(simpleName.equals("Long")||simpleName.equals("long")){
+                cell.setCellValue(field.get(entityObj)!=null?Long.valueOf(field.get(entityObj).toString()):0L);
+            }else if(simpleName.equals("Byte")||simpleName.equals("byte")){
+                cell.setCellValue(field.get(entityObj)!=null?Byte.valueOf(field.get(entityObj).toString()):0);
+            }else if(simpleName.equals("Character")||simpleName.equals("char")){
+                cell.setCellValue(field.get(entityObj)!=null?Character.valueOf(field.get(entityObj).toString().charAt(0)):Character.MIN_VALUE);
+            }else if(simpleName.equals("Short")||simpleName.equals("short")){
+                cell.setCellValue(field.get(entityObj)!=null?Short.valueOf(field.get(entityObj).toString()):0);
+            }else if(simpleName.equals("byte[]")){
+                if(field.get(entityObj)==null){
+                    cell.setCellValue("");
+                }else{
+                    File file = byte2file((byte[])field.get(entityObj),this.imgType);
+                    if(!file.exists()){
+                        file.createNewFile();
+                    }
+                    imgHeight = exportImage(rowNo, patriarch, row, index, imgHeight, file);
+                }
+            }else if(simpleName.equals("File")){
+                if(field.get(entityObj)==null){
+                    cell.setCellValue("");
+                }else{
+                    imgHeight = exportImage(rowNo, patriarch, row, index, imgHeight, (File)field.get(entityObj));
+                }
+            }else{
+                cell.setCellValue(field.get(entityObj)!=null?field.get(entityObj).toString():"");
+            }
+        }
+        cell.setCellStyle(this.setCellStyle( ExcelUtil.PART_BODY));
+        return imgHeight;
+    }
+
+    private short exportImage(int rowNo, HSSFPatriarch patriarch, HSSFRow row, short index, short imgHeight, File file) throws IOException {
+        ByteArrayOutputStream byteArrayOut = new ByteArrayOutputStream();
+        BufferedImage bufferImg = ImageIO.read(file);
+        if((short)(bufferImg.getHeight()*10)>imgHeight){
+            imgHeight = Integer.valueOf(bufferImg.getHeight()*10).shortValue();
+        }
+        row.setHeight(imgHeight);
+        HSSFClientAnchor anchor =new HSSFClientAnchor(0,0,1020,250,index,rowNo,index,rowNo);//dx2最大值  1023,dy2最大值255
+        if(this.imgType!=null&&!this.imgType.equals("")&&this.imgType.equals("jpg")){
+            ImageIO.write(bufferImg, "jpg", byteArrayOut);
+            patriarch.createPicture(anchor,this.workbook.addPicture(byteArrayOut.toByteArray(), HSSFWorkbook.PICTURE_TYPE_JPEG));
+        }else if(this.imgType!=null&&!this.imgType.equals("")&&this.imgType.equals("png")){
+            ImageIO.write(bufferImg, "jpg", byteArrayOut);
+            patriarch.createPicture(anchor,this.workbook.addPicture(byteArrayOut.toByteArray(), HSSFWorkbook.PICTURE_TYPE_PNG));
+        }
+        byteArrayOut.close();
+        file.delete();
+        return imgHeight;
     }
 
     /**
@@ -166,6 +225,7 @@ public class ExcelUtil {
         font.setBoldweight(Font.BOLDWEIGHT_BOLD);
         cellStyle.setFont(font);
         cellStyle.setAlignment(HSSFCellStyle.ALIGN_CENTER);
+        cellStyle.setVerticalAlignment(HSSFCellStyle.VERTICAL_CENTER);//垂直居中
         return cellStyle;
     }
 
@@ -173,7 +233,7 @@ public class ExcelUtil {
      * 生成excel文件
      */
     private void createExcelFile() throws ExportExcelException{
-        String fileName = sheetName + new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()) + ".xls";
+        String fileName = this.fileName + new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()) + ".xls";
         OutputStream out = null;
         try {
             out = new FileOutputStream(new File("d:/" + fileName));
@@ -189,5 +249,30 @@ public class ExcelUtil {
             }
         }
     }
-}
 
+    /**
+     * 将一byte数组转换成图片
+     * @param buffer byte数组
+     * @return 转换完成的图片
+     */
+    public File byte2file(byte[] buffer,String imgType){
+        File file = null;
+        FileOutputStream out = null;
+        try {
+            file = new File("D:/temple/temp"+new SimpleDateFormat("yyyyMMddHHmmssS").format(new Date())+"."+imgType);
+            File parentFile = file.getParentFile();
+            if(!parentFile.exists()){
+                parentFile.mkdirs();
+            }
+            if(!file.exists()){
+                file.createNewFile();
+            }
+            out = new FileOutputStream(file);
+            out.write(buffer);
+            out.close();
+        }catch (IOException e){
+            e.printStackTrace();
+        }
+        return file;
+    }
+}
