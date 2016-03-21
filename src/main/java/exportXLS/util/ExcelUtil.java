@@ -52,14 +52,14 @@ public class ExcelUtil {
                 HSSFPatriarch patriarch = null;
                 for (int i = 0; i < pageCount; i++) {
                     this.sheetName = sheetName + (i + 1);
-                    patriarch = this.workbook.createSheet(this.sheetName).createDrawingPatriarch();;
+                    patriarch = this.workbook.createSheet(this.sheetName).createDrawingPatriarch();
                     this.createSheetHeaderRow(fieldList);
                     for (int rowNo = 1, listNo = i * MAX_PAGE_NUM; listNo < (((i + 1) == pageCount) ? (i * MAX_PAGE_NUM) + (size % MAX_PAGE_NUM) : (i + 1) * MAX_PAGE_NUM); rowNo++, listNo++) {
                         this.createSheetBodyRow(rowNo, entityList.get(listNo), fieldList,patriarch);
                     }
                 }
             }
-            createExcelFile();
+            createExcelFile("D:/");
         }catch (Exception e){
             throw new ExportExcelException(e);
         }
@@ -168,7 +168,7 @@ public class ExcelUtil {
                 if(field.get(entityObj)==null){
                     cell.setCellValue("");
                 }else{
-                    File file = byte2file((byte[])field.get(entityObj),this.imgType);
+                    File file = FileUtil.byte2file((byte[])field.get(entityObj),this.imgType);
                     if(!file.exists()){
                         file.createNewFile();
                     }
@@ -200,7 +200,7 @@ public class ExcelUtil {
             ImageIO.write(bufferImg, "jpg", byteArrayOut);
             patriarch.createPicture(anchor,this.workbook.addPicture(byteArrayOut.toByteArray(), HSSFWorkbook.PICTURE_TYPE_JPEG));
         }else if(this.imgType!=null&&!this.imgType.equals("")&&this.imgType.equals("png")){
-            ImageIO.write(bufferImg, "jpg", byteArrayOut);
+            ImageIO.write(bufferImg, "png", byteArrayOut);
             patriarch.createPicture(anchor,this.workbook.addPicture(byteArrayOut.toByteArray(), HSSFWorkbook.PICTURE_TYPE_PNG));
         }
         byteArrayOut.close();
@@ -232,11 +232,11 @@ public class ExcelUtil {
     /**
      * 生成excel文件
      */
-    private void createExcelFile() throws ExportExcelException{
+    private void createExcelFile(String exportFilePath) throws ExportExcelException{
         String fileName = this.fileName + new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()) + ".xls";
         OutputStream out = null;
         try {
-            out = new FileOutputStream(new File("d:/" + fileName));
+            out = new FileOutputStream(new File(exportFilePath + fileName));
             workbook.write(out);
         } catch (Exception e) {
             e.printStackTrace();
@@ -248,31 +248,5 @@ public class ExcelUtil {
                 e.printStackTrace();
             }
         }
-    }
-
-    /**
-     * 将一byte数组转换成图片
-     * @param buffer byte数组
-     * @return 转换完成的图片
-     */
-    public File byte2file(byte[] buffer,String imgType){
-        File file = null;
-        FileOutputStream out = null;
-        try {
-            file = new File("D:/temple/temp"+new SimpleDateFormat("yyyyMMddHHmmssS").format(new Date())+"."+imgType);
-            File parentFile = file.getParentFile();
-            if(!parentFile.exists()){
-                parentFile.mkdirs();
-            }
-            if(!file.exists()){
-                file.createNewFile();
-            }
-            out = new FileOutputStream(file);
-            out.write(buffer);
-            out.close();
-        }catch (IOException e){
-            e.printStackTrace();
-        }
-        return file;
     }
 }
